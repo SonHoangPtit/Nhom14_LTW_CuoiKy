@@ -106,3 +106,16 @@ export const login = async (req, res, next) => {
     next(error);
   }
 };
+
+// Lấy danh sách tài khoản Người thuê (để Chủ trọ chọn khi lập hợp đồng)
+export const getTenants = async (req, res, next) => {
+  try {
+    const tenants = await User.find({ role: 'tenant' }).select('_id fullName email phone');
+    res.status(200).json({
+      success: true,
+      data: tenants
+    });
+  } catch (error) {
+    next(error);
+  }
+};

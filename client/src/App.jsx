@@ -1,122 +1,98 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import Navbar from './components/Navbar';
+import ProtectedRoute from './components/ProtectedRoute';
 
-function App() {
-  const [count, setCount] = useState(0)
+import HomePage from './pages/HomePage';
+import RoomDetailPage from './pages/RoomDetailPage';
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
 
+import DashboardPage from './pages/DashboardPage';
+import ManageHousesRoomsPage from './pages/ManageHousesRoomsPage';
+import ManageContractsPage from './pages/ManageContractsPage';
+import BulkUtilityPage from './pages/BulkUtilityPage';
+import ManageInvoicesPage from './pages/ManageInvoicesPage';
+import ManageRepairsPage from './pages/ManageRepairsPage';
+import TenantPortalPage from './pages/TenantPortalPage';
+
+const App = () => {
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <BrowserRouter>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors">
+        <Navbar />
 
-      <div className="ticks"></div>
+        <main className="max-w-7xl mx-auto px-4 py-6">
+          <Routes>
+            {/* Tuyến đường công khai */}
+            <Route path="/" element={<HomePage />} />
+            <Route path="/rooms/:id" element={<RoomDetailPage />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+            {/* Tuyến đường dành cho Chủ trọ */}
+            <Route
+              path="/landlord/dashboard"
+              element={
+                <ProtectedRoute allowedRole="landlord">
+                  <DashboardPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/landlord/houses-rooms"
+              element={
+                <ProtectedRoute allowedRole="landlord">
+                  <ManageHousesRoomsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/landlord/contracts"
+              element={
+                <ProtectedRoute allowedRole="landlord">
+                  <ManageContractsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/landlord/bulk-utility"
+              element={
+                <ProtectedRoute allowedRole="landlord">
+                  <BulkUtilityPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/landlord/invoices"
+              element={
+                <ProtectedRoute allowedRole="landlord">
+                  <ManageInvoicesPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/landlord/repairs"
+              element={
+                <ProtectedRoute allowedRole="landlord">
+                  <ManageRepairsPage />
+                </ProtectedRoute>
+              }
+            />
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
-}
+            {/* Tuyến đường dành cho Người thuê */}
+            <Route
+              path="/tenant"
+              element={
+                <ProtectedRoute allowedRole="tenant">
+                  <TenantPortalPage />
+                </ProtectedRoute>
+              }
+            />
+          </Routes>
+        </main>
+      </div>
+    </BrowserRouter>
+  );
+};
 
-export default App
+export default App;
