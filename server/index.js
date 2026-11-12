@@ -9,6 +9,8 @@ import roomRoutes from './routes/roomRoutes.js';
 import contactRoutes from './routes/contactRoutes.js';
 import contractRoutes from './routes/contractRoutes.js';
 import invoiceRoutes from './routes/invoiceRoutes.js';
+import repairRoutes from './routes/repairRoutes.js';
+import statisticRoutes from './routes/statisticRoutes.js';
 import { errorHandler } from './middlewares/errorMiddleware.js';
 
 dotenv.config();
@@ -33,6 +35,8 @@ app.use('/api/rooms', roomRoutes);
 app.use('/api/contacts', contactRoutes);
 app.use('/api/contracts', contractRoutes);
 app.use('/api/invoices', invoiceRoutes);
+app.use('/api/repairs', repairRoutes);
+app.use('/api/statistics', statisticRoutes);
 
 // Middleware xử lý lỗi tập trung (Luôn đặt ở cuối cùng)
 app.use(errorHandler);
