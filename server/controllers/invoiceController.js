@@ -1,6 +1,18 @@
+import nodemailer from 'nodemailer';
 import Invoice from '../models/Invoice.js';
 import Room from '../models/Room.js';
 import Contract from '../models/Contract.js';
+
+// Hàm tính tiền điện bậc thang (50 số đầu 1.800đ, 50 số tiếp 2.000đ, từ 101 trở lên 2.500đ)
+const calcTieredElectric = (kwh) => {
+  if (kwh <= 50) {
+    return kwh * 1800;
+  } else if (kwh <= 100) {
+    return 50 * 1800 + (kwh - 50) * 2000;
+  } else {
+    return 50 * 1800 + 50 * 2000 + (kwh - 100) * 2500;
+  }
+};
 
 // 1. Lấy danh sách hóa đơn (Chủ trọ xem tất cả, Người thuê chỉ xem hóa đơn của mình)
 export const getInvoices = async (req, res, next) => {
@@ -8,7 +20,6 @@ export const getInvoices = async (req, res, next) => {
     const { month, year, isPaid, roomId } = req.query;
     const filter = {};
 
-    // Nếu là người thuê thì chỉ lọc hóa đơn thuộc về người thuê đó
     if (req.user.role === 'tenant') {
       filter.tenantId = req.user.userId;
     }
@@ -48,7 +59,6 @@ export const getInvoiceById = async (req, res, next) => {
       });
     }
 
-    // Lấy ID người thuê của hóa đơn để đối chiếu
     const invoiceTenantId = invoice.tenantId._id
       ? invoice.tenantId._id.toString()
       : invoice.tenantId.toString();
@@ -80,10 +90,10 @@ export const createInvoice = async (req, res, next) => {
       oldElectric,
       newElectric,
       oldWater,
-      newWater
+      newWater,
+      useTieredElectric
     } = req.body;
 
-    // Kiểm tra dữ liệu đầu vào bắt buộc
     if (
       !roomId ||
       !month ||
@@ -99,7 +109,6 @@ export const createInvoice = async (req, res, next) => {
       });
     }
 
-    // Kiểm tra chỉ số mới không được nhỏ hơn chỉ số cũ
     if (Number(newElectric) < Number(oldElectric) || Number(newWater) < Number(oldWater)) {
       return res.status(400).json({
         success: false,
@@ -107,7 +116,6 @@ export const createInvoice = async (req, res, next) => {
       });
     }
 
-    // Kiểm tra trùng hóa đơn trong cùng tháng/năm của phòng đó
     const existingInvoice = await Invoice.findOne({
       roomId,
       month: Number(month),
@@ -121,7 +129,6 @@ export const createInvoice = async (req, res, next) => {
       });
     }
 
-    // Lấy thông tin phòng kèm đơn giá điện, nước, dịch vụ của dãy trọ
     const room = await Room.findById(roomId).populate('boardingHouseId');
     if (!room) {
       return res.status(404).json({
@@ -130,7 +137,6 @@ export const createInvoice = async (req, res, next) => {
       });
     }
 
-    // Nếu client không gửi sẵn tenantId, tự tìm người thuê qua hợp đồng đang hiệu lực
     let finalTenantId = tenantId;
     if (!finalTenantId) {
       const activeContract = await Contract.findOne({
@@ -146,13 +152,17 @@ export const createInvoice = async (req, res, next) => {
       finalTenantId = activeContract.tenantId;
     }
 
-    // Tính tiền tự động tại Server theo đơn giá của dãy trọ
     const roomPrice = room.price;
     const electricPrice = room.boardingHouseId.electricPrice;
     const waterPrice = room.boardingHouseId.waterPrice;
     const serviceFee = room.boardingHouseId.serviceFee || 0;
 
-    const electricCost = (Number(newElectric) - Number(oldElectric)) * electricPrice;
+    // Tính tiền điện theo bậc thang nếu Chủ trọ tích chọn, ngược lại tính theo đơn giá cố định
+    const kwhUsed = Number(newElectric) - Number(oldElectric);
+    const electricCost = useTieredElectric
+      ? calcTieredElectric(kwhUsed)
+      : kwhUsed * electricPrice;
+
     const waterCost = (Number(newWater) - Number(oldWater)) * waterPrice;
     const totalAmount = roomPrice + electricCost + waterCost + serviceFee;
 
@@ -203,6 +213,132 @@ export const markInvoiceAsPaid = async (req, res, next) => {
       success: true,
       message: 'Đã xác nhận thanh toán hóa đơn',
       data: updatedInvoice
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// 5. Gửi email nhắc nợ chi tiết cho người thuê (Chỉ Chủ trọ)
+export const sendRemindEmail = async (req, res, next) => {
+  try {
+    const invoice = await Invoice.findById(req.params.id)
+      .populate('roomId', 'roomNumber')
+      .populate('tenantId', 'fullName email');
+
+    if (!invoice) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy hóa đơn'
+      });
+    }
+
+    if (invoice.isPaid) {
+      return res.status(400).json({
+        success: false,
+        message: 'Hóa đơn này đã được thanh toán'
+      });
+    }
+
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      return res.status(400).json({
+        success: false,
+        message: 'Chưa cấu hình EMAIL_USER và EMAIL_PASS trong file server/.env'
+      });
+    }
+
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+      }
+    });
+
+    await transporter.sendMail({
+      from: `"Quản Lý Nhà Trọ" <${process.env.EMAIL_USER}>`,
+      to: invoice.tenantId.email,
+      subject: `[Nhắc thanh toán] Hóa đơn Phòng ${invoice.roomId.roomNumber} - Tháng ${invoice.month}/${invoice.year}`,
+      html: `
+        <h3>Xin chào ${invoice.tenantId.fullName},</h3>
+        <p>Ban quản lý nhà trọ xin thông báo chi tiết hóa đơn <strong>Phòng ${invoice.roomId.roomNumber}</strong> kỳ <strong>Tháng ${invoice.month}/${invoice.year}</strong>:</p>
+        <ul>
+          <li>Tiền thuê phòng: <strong>${invoice.roomPrice.toLocaleString('vi-VN')} đ</strong></li>
+          <li>Tiền điện (${invoice.oldElectric} → ${invoice.newElectric}): <strong>${invoice.electricCost.toLocaleString('vi-VN')} đ</strong></li>
+          <li>Tiền nước (${invoice.oldWater} → ${invoice.newWater}): <strong>${invoice.waterCost.toLocaleString('vi-VN')} đ</strong></li>
+          <li>Phí dịch vụ: <strong>${invoice.serviceFee.toLocaleString('vi-VN')} đ</strong></li>
+        </ul>
+        <p><strong>Tổng tiền cần thanh toán: ${invoice.totalAmount.toLocaleString('vi-VN')} VNĐ</strong></p>
+        <p>Vui lòng thanh toán đúng hạn. Xin cảm ơn!</p>
+      `
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Đã gửi email nhắc nợ tới ${invoice.tenantId.email}`
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// 5. Gửi email nhắc nợ chi tiết cho người thuê (Chỉ Chủ trọ)
+export const sendRemindEmail = async (req, res, next) => {
+  try {
+    const invoice = await Invoice.findById(req.params.id)
+      .populate('roomId', 'roomNumber')
+      .populate('tenantId', 'fullName email');
+
+    if (!invoice) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy hóa đơn'
+      });
+    }
+
+    if (invoice.isPaid) {
+      return res.status(400).json({
+        success: false,
+        message: 'Hóa đơn này đã được thanh toán'
+      });
+    }
+
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      return res.status(400).json({
+        success: false,
+        message: 'Chưa cấu hình EMAIL_USER và EMAIL_PASS trong file server/.env'
+      });
+    }
+
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+      }
+    });
+
+    await transporter.sendMail({
+      from: `"Quản Lý Nhà Trọ" <${process.env.EMAIL_USER}>`,
+      to: invoice.tenantId.email,
+      subject: `[Nhắc thanh toán] Hóa đơn Phòng ${invoice.roomId.roomNumber} - Tháng ${invoice.month}/${invoice.year}`,
+      html: `
+        <h3>Xin chào ${invoice.tenantId.fullName},</h3>
+        <p>Ban quản lý nhà trọ xin thông báo chi tiết hóa đơn <strong>Phòng ${invoice.roomId.roomNumber}</strong> kỳ <strong>Tháng ${invoice.month}/${invoice.year}</strong>:</p>
+        <ul>
+          <li>Tiền thuê phòng: <strong>${invoice.roomPrice.toLocaleString('vi-VN')} đ</strong></li>
+          <li>Tiền điện (${invoice.oldElectric} → ${invoice.newElectric}): <strong>${invoice.electricCost.toLocaleString('vi-VN')} đ</strong></li>
+          <li>Tiền nước (${invoice.oldWater} → ${invoice.newWater}): <strong>${invoice.waterCost.toLocaleString('vi-VN')} đ</strong></li>
+          <li>Phí dịch vụ: <strong>${invoice.serviceFee.toLocaleString('vi-VN')} đ</strong></li>
+        </ul>
+        <p><strong>Tổng tiền cần thanh toán: ${invoice.totalAmount.toLocaleString('vi-VN')} VNĐ</strong></p>
+        <p>Vui lòng thanh toán đúng hạn. Xin cảm ơn!</p>
+      `
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Đã gửi email nhắc nợ tới ${invoice.tenantId.email}`
     });
   } catch (error) {
     next(error);

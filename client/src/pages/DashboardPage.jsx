@@ -6,6 +6,7 @@ const DashboardPage = () => {
   const [stats, setStats] = useState(null);
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedYear, setSelectedYear] = useState(2026);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -29,10 +30,17 @@ const DashboardPage = () => {
   if (loading) return <p className="text-center py-8 dark:text-gray-300">Đang tải số liệu thống kê...</p>;
   if (!stats) return null;
 
-  const chartData = stats.monthlyRevenue.map((item) => ({
-    label: `T${item._id.month}/${item._id.year}`,
-    revenue: item.totalRevenue
-  }));
+  // Ghép dữ liệu API Aggregation thành đủ 12 tháng (T1 -> T12)
+  const chartData = Array.from({ length: 12 }, (_, idx) => {
+    const monthNum = idx + 1;
+    const found = stats.monthlyRevenue.find(
+      (item) => item._id.month === monthNum && item._id.year === Number(selectedYear)
+    );
+    return {
+      label: `T${monthNum}`,
+      revenue: found ? found.totalRevenue : 0
+    };
+  });
 
   return (
     <div className="space-y-6">
@@ -58,10 +66,21 @@ const DashboardPage = () => {
         </div>
       </div>
 
-      {/* Biểu đồ doanh thu & Danh sách phòng nợ */}
+      {/* Biểu đồ doanh thu 12 tháng & Danh sách phòng nợ */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <section className="bg-white dark:bg-gray-800 p-5 rounded-xl shadow">
-          <h2 className="text-lg font-bold mb-4 dark:text-white">Doanh Thu Đã Thu Theo Tháng</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold dark:text-white">Doanh Thu 12 Tháng</h2>
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(Number(e.target.value))}
+              className="px-2 py-1 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+            >
+              <option value={2026}>Năm 2026</option>
+              <option value={2025}>Năm 2025</option>
+            </select>
+          </div>
+
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData}>

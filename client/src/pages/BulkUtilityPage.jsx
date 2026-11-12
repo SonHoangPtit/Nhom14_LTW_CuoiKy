@@ -2,6 +2,17 @@ import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiRequest } from '../services/api';
 
+// Hàm tính tiền điện bậc thang (50 số đầu 1.800đ, 50 số tiếp 2.000đ, từ 101 trở lên 2.500đ)
+const calcTieredElectric = (kwh) => {
+  if (kwh <= 50) {
+    return kwh * 1800;
+  } else if (kwh <= 100) {
+    return 50 * 1800 + (kwh - 50) * 2000;
+  } else {
+    return 50 * 1800 + 50 * 2000 + (kwh - 100) * 2500;
+  }
+};
+
 const BulkUtilityPage = () => {
   const navigate = useNavigate();
   const currentDate = new Date();
@@ -11,6 +22,7 @@ const BulkUtilityPage = () => {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [useTieredElectric, setUseTieredElectric] = useState(false);
 
   // Tải danh sách phòng 'Đang thuê' và hóa đơn gần nhất để gợi ý chỉ số cũ
   useEffect(() => {
@@ -25,7 +37,6 @@ const BulkUtilityPage = () => {
         const pastInvoices = invoiceRes.data;
 
         const initialRows = rentedRooms.map((room) => {
-          // Tìm hóa đơn gần nhất của phòng này để tự điền chỉ số cũ
           const lastInv = pastInvoices.find(
             (inv) => (inv.roomId?._id || inv.roomId) === room._id
           );
@@ -60,7 +71,7 @@ const BulkUtilityPage = () => {
     loadRentedRooms();
   }, []);
 
-  // Cập nhật từng dòng bằng map và spread (...) — không sửa trực tiếp state
+  // Cập nhật từng dòng bằng map và spread (...)
   const handleRowChange = (roomId, field, value) => {
     setRows((prevRows) =>
       prevRows.map((row) =>
@@ -83,16 +94,15 @@ const BulkUtilityPage = () => {
     return errors;
   };
 
-  // Tính tiền từng dòng
+  // Tính tiền từng dòng (tự động đổi giữa giá cố định và giá bậc thang)
   const calcRowTotal = (row) => {
     const electricUsed = Math.max(0, row.newElectric - row.oldElectric);
     const waterUsed = Math.max(0, row.newWater - row.oldWater);
-    return (
-      row.roomPrice +
-      electricUsed * row.electricPrice +
-      waterUsed * row.waterPrice +
-      row.serviceFee
-    );
+    const electricMoney = useTieredElectric
+      ? calcTieredElectric(electricUsed)
+      : electricUsed * row.electricPrice;
+
+    return row.roomPrice + electricMoney + waterUsed * row.waterPrice + row.serviceFee;
   };
 
   // Dùng useMemo tính tổng tiền dự kiến của toàn bộ các phòng được chọn
@@ -101,9 +111,8 @@ const BulkUtilityPage = () => {
       if (!row.selected) return sum;
       return sum + calcRowTotal(row);
     }, 0);
-  }, [rows]);
+  }, [rows, useTieredElectric]);
 
-  // Kiểm tra có dòng nào đang nhập sai không
   const hasAnyError = rows.some((row) => row.selected && validateRow(row).length > 0);
 
   // Phát hành hóa đơn hàng loạt
@@ -135,7 +144,8 @@ const BulkUtilityPage = () => {
             oldElectric: row.oldElectric,
             newElectric: row.newElectric,
             oldWater: row.oldWater,
-            newWater: row.newWater
+            newWater: row.newWater,
+            useTieredElectric
           })
         });
         successCount += 1;
@@ -163,7 +173,7 @@ const BulkUtilityPage = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-3 bg-white dark:bg-gray-800 p-3 rounded-xl shadow">
+        <div className="flex flex-wrap items-center gap-3 bg-white dark:bg-gray-800 p-3 rounded-xl shadow">
           <label htmlFor="bill-month" className="text-sm font-medium dark:text-gray-200">
             Tháng:
           </label>
@@ -187,6 +197,15 @@ const BulkUtilityPage = () => {
             onChange={(e) => setYear(e.target.value)}
             className="w-20 px-2 py-1 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
           />
+
+          <label className="flex items-center gap-2 text-sm font-medium text-blue-600 dark:text-blue-400 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={useTieredElectric}
+              onChange={(e) => setUseTieredElectric(e.target.checked)}
+            />
+            Áp dụng giá điện bậc thang
+          </label>
         </div>
       </div>
 
