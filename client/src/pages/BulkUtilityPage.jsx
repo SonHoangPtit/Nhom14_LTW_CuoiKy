@@ -2,7 +2,6 @@ import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiRequest } from '../services/api';
 
-// Hàm tính tiền điện bậc thang (50 số đầu 1.800đ, 50 số tiếp 2.000đ, từ 101 trở lên 2.500đ)
 const calcTieredElectric = (kwh) => {
   if (kwh <= 50) {
     return kwh * 1800;
@@ -24,17 +23,17 @@ const BulkUtilityPage = () => {
   const [submitting, setSubmitting] = useState(false);
   const [useTieredElectric, setUseTieredElectric] = useState(false);
 
-  // Tải danh sách phòng 'Đang thuê' và hóa đơn gần nhất để gợi ý chỉ số cũ
   useEffect(() => {
     const loadRentedRooms = async () => {
       try {
+        const statusQuery = encodeURIComponent('Đang thuê');
         const [roomRes, invoiceRes] = await Promise.all([
-          apiRequest('/rooms?status=Đang thuê&limit=100'),
+          apiRequest(`/rooms?status=${statusQuery}&limit=100`),
           apiRequest('/invoices')
         ]);
 
-        const rentedRooms = roomRes.data;
-        const pastInvoices = invoiceRes.data;
+        const rentedRooms = roomRes.data || [];
+        const pastInvoices = invoiceRes.data || [];
 
         const initialRows = rentedRooms.map((room) => {
           const lastInv = pastInvoices.find(
@@ -55,7 +54,7 @@ const BulkUtilityPage = () => {
             oldElectric,
             newElectric: oldElectric,
             oldWater,
-            newWater,
+            newWater: oldWater,
             selected: true
           };
         });
@@ -71,33 +70,29 @@ const BulkUtilityPage = () => {
     loadRentedRooms();
   }, []);
 
-  // Cập nhật từng dòng bằng map và spread (...)
+  // Giữ nguyên giá trị đang gõ để người dùng xóa/nhập số mượt mà
   const handleRowChange = (roomId, field, value) => {
     setRows((prevRows) =>
       prevRows.map((row) =>
-        row.roomId === roomId
-          ? { ...row, [field]: field === 'selected' ? value : Number(value) }
-          : row
+        row.roomId === roomId ? { ...row, [field]: value } : row
       )
     );
   };
 
-  // Kiểm tra hợp lệ từng dòng ngay khi nhập
   const validateRow = (row) => {
     const errors = [];
-    if (row.newElectric < row.oldElectric) {
+    if (row.newElectric === '' || Number(row.newElectric) < Number(row.oldElectric)) {
       errors.push('Số điện mới không được nhỏ hơn số điện cũ');
     }
-    if (row.newWater < row.oldWater) {
+    if (row.newWater === '' || Number(row.newWater) < Number(row.oldWater)) {
       errors.push('Số nước mới không được nhỏ hơn số nước cũ');
     }
     return errors;
   };
 
-  // Tính tiền từng dòng (tự động đổi giữa giá cố định và giá bậc thang)
   const calcRowTotal = (row) => {
-    const electricUsed = Math.max(0, row.newElectric - row.oldElectric);
-    const waterUsed = Math.max(0, row.newWater - row.oldWater);
+    const electricUsed = Math.max(0, Number(row.newElectric) - Number(row.oldElectric));
+    const waterUsed = Math.max(0, Number(row.newWater) - Number(row.oldWater));
     const electricMoney = useTieredElectric
       ? calcTieredElectric(electricUsed)
       : electricUsed * row.electricPrice;
@@ -105,7 +100,6 @@ const BulkUtilityPage = () => {
     return row.roomPrice + electricMoney + waterUsed * row.waterPrice + row.serviceFee;
   };
 
-  // Dùng useMemo tính tổng tiền dự kiến của toàn bộ các phòng được chọn
   const grandTotal = useMemo(() => {
     return rows.reduce((sum, row) => {
       if (!row.selected) return sum;
@@ -115,7 +109,6 @@ const BulkUtilityPage = () => {
 
   const hasAnyError = rows.some((row) => row.selected && validateRow(row).length > 0);
 
-  // Phát hành hóa đơn hàng loạt
   const handleCreateBulkInvoices = async (e) => {
     e.preventDefault();
     const selectedRows = rows.filter((r) => r.selected);
@@ -141,10 +134,10 @@ const BulkUtilityPage = () => {
             roomId: row.roomId,
             month: Number(month),
             year: Number(year),
-            oldElectric: row.oldElectric,
-            newElectric: row.newElectric,
-            oldWater: row.oldWater,
-            newWater: row.newWater,
+            oldElectric: Number(row.oldElectric),
+            newElectric: Number(row.newElectric),
+            oldWater: Number(row.oldWater),
+            newWater: Number(row.newWater),
             useTieredElectric
           })
         });
@@ -226,70 +219,78 @@ const BulkUtilityPage = () => {
               </tr>
             </thead>
             <tbody className="divide-y dark:divide-gray-700 dark:text-gray-200">
-              {rows.map((row) => {
-                const rowErrors = validateRow(row);
-                const rowTotal = calcRowTotal(row);
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan="9" className="p-6 text-center text-gray-500">
+                    Hiện chưa có phòng nào ở trạng thái "Đang thuê".
+                  </td>
+                </tr>
+              ) : (
+                rows.map((row) => {
+                  const rowErrors = validateRow(row);
+                  const rowTotal = calcRowTotal(row);
 
-                return (
-                  <tr key={row.roomId} className={rowErrors.length > 0 ? 'bg-red-50 dark:bg-red-950/30' : ''}>
-                    <td className="p-3">
-                      <input
-                        type="checkbox"
-                        checked={row.selected}
-                        onChange={(e) => handleRowChange(row.roomId, 'selected', e.target.checked)}
-                      />
-                    </td>
-                    <td className="p-3 font-semibold">
-                      {row.roomNumber}
-                      <span className="block text-xs text-gray-500 font-normal">{row.houseName}</span>
-                    </td>
-                    <td className="p-3">{row.roomPrice.toLocaleString('vi-VN')} đ</td>
-                    <td className="p-3">
-                      <input
-                        type="number"
-                        value={row.oldElectric}
-                        onChange={(e) => handleRowChange(row.roomId, 'oldElectric', e.target.value)}
-                        className="w-20 px-2 py-1 border rounded dark:bg-gray-700 dark:border-gray-600"
-                      />
-                    </td>
-                    <td className="p-3">
-                      <input
-                        type="number"
-                        value={row.newElectric}
-                        onChange={(e) => handleRowChange(row.roomId, 'newElectric', e.target.value)}
-                        className="w-20 px-2 py-1 border rounded dark:bg-gray-700 dark:border-gray-600"
-                      />
-                    </td>
-                    <td className="p-3">
-                      <input
-                        type="number"
-                        value={row.oldWater}
-                        onChange={(e) => handleRowChange(row.roomId, 'oldWater', e.target.value)}
-                        className="w-20 px-2 py-1 border rounded dark:bg-gray-700 dark:border-gray-600"
-                      />
-                    </td>
-                    <td className="p-3">
-                      <input
-                        type="number"
-                        value={row.newWater}
-                        onChange={(e) => handleRowChange(row.roomId, 'newWater', e.target.value)}
-                        className="w-20 px-2 py-1 border rounded dark:bg-gray-700 dark:border-gray-600"
-                      />
-                    </td>
-                    <td className="p-3">{row.serviceFee.toLocaleString('vi-VN')} đ</td>
-                    <td className="p-3 text-right">
-                      <span className="font-bold text-blue-600 dark:text-blue-400">
-                        {rowTotal.toLocaleString('vi-VN')} đ
-                      </span>
-                      {rowErrors.map((errText, i) => (
-                        <p key={i} className="text-xs text-red-600 font-medium mt-1">
-                          {errText}
-                        </p>
-                      ))}
-                    </td>
-                  </tr>
-                );
-              })}
+                  return (
+                    <tr key={row.roomId} className={rowErrors.length > 0 ? 'bg-red-50 dark:bg-red-950/30' : ''}>
+                      <td className="p-3">
+                        <input
+                          type="checkbox"
+                          checked={row.selected}
+                          onChange={(e) => handleRowChange(row.roomId, 'selected', e.target.checked)}
+                        />
+                      </td>
+                      <td className="p-3 font-semibold">
+                        {row.roomNumber}
+                        <span className="block text-xs text-gray-500 font-normal">{row.houseName}</span>
+                      </td>
+                      <td className="p-3">{row.roomPrice.toLocaleString('vi-VN')} đ</td>
+                      <td className="p-3">
+                        <input
+                          type="number"
+                          value={row.oldElectric}
+                          onChange={(e) => handleRowChange(row.roomId, 'oldElectric', e.target.value)}
+                          className="w-20 px-2 py-1 border rounded dark:bg-gray-700 dark:border-gray-600"
+                        />
+                      </td>
+                      <td className="p-3">
+                        <input
+                          type="number"
+                          value={row.newElectric}
+                          onChange={(e) => handleRowChange(row.roomId, 'newElectric', e.target.value)}
+                          className="w-20 px-2 py-1 border rounded dark:bg-gray-700 dark:border-gray-600"
+                        />
+                      </td>
+                      <td className="p-3">
+                        <input
+                          type="number"
+                          value={row.oldWater}
+                          onChange={(e) => handleRowChange(row.roomId, 'oldWater', e.target.value)}
+                          className="w-20 px-2 py-1 border rounded dark:bg-gray-700 dark:border-gray-600"
+                        />
+                      </td>
+                      <td className="p-3">
+                        <input
+                          type="number"
+                          value={row.newWater}
+                          onChange={(e) => handleRowChange(row.roomId, 'newWater', e.target.value)}
+                          className="w-20 px-2 py-1 border rounded dark:bg-gray-700 dark:border-gray-600"
+                        />
+                      </td>
+                      <td className="p-3">{row.serviceFee.toLocaleString('vi-VN')} đ</td>
+                      <td className="p-3 text-right">
+                        <span className="font-bold text-blue-600 dark:text-blue-400">
+                          {rowTotal.toLocaleString('vi-VN')} đ
+                        </span>
+                        {rowErrors.map((errText, i) => (
+                          <p key={i} className="text-xs text-red-600 font-medium mt-1">
+                            {errText}
+                          </p>
+                        ))}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>

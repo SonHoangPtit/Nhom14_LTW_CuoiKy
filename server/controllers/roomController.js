@@ -1,4 +1,6 @@
 import Room from '../models/Room.js';
+import Contract from '../models/Contract.js';
+import Invoice from '../models/Invoice.js';
 
 // Lấy danh sách phòng (Có lọc, tìm kiếm và phân trang)
 export const getRooms = async (req, res, next) => {
@@ -132,17 +134,26 @@ export const createRoom = async (req, res, next) => {
 // Cập nhật thông tin phòng (Chủ trọ)
 export const updateRoom = async (req, res, next) => {
   try {
-    const updatedRoom = await Room.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true
-    });
-
-    if (!updatedRoom) {
+    const room = await Room.findById(req.params.id);
+    if (!room) {
       return res.status(404).json({
         success: false,
         message: 'Không tìm thấy phòng trọ'
       });
     }
+
+    // Chặn đổi trạng thái thủ công nếu phòng đang có hợp đồng thuê
+    if (room.status === 'Đang thuê' && req.body.status && req.body.status !== 'Đang thuê') {
+      return res.status(400).json({
+        success: false,
+        message: 'Phòng đang có người thuê, hãy kết thúc hợp đồng ở mục Hợp đồng trước!'
+      });
+    }
+
+    const updatedRoom = await Room.findByIdAndUpdate(req.params.id, req.body, {
+      new: true,
+      runValidators: true
+    });
 
     res.status(200).json({
       success: true,
@@ -154,17 +165,35 @@ export const updateRoom = async (req, res, next) => {
   }
 };
 
-// Xóa phòng (Chủ trọ)
+// Xóa phòng (Chủ trọ - Chỉ xóa được phòng chưa từng có hợp đồng hoặc hóa đơn)
 export const deleteRoom = async (req, res, next) => {
   try {
-    const deletedRoom = await Room.findByIdAndDelete(req.params.id);
+    const room = await Room.findById(req.params.id);
 
-    if (!deletedRoom) {
+    if (!room) {
       return res.status(404).json({
         success: false,
         message: 'Không tìm thấy phòng trọ để xóa'
       });
     }
+
+    if (room.status === 'Đang thuê') {
+      return res.status(400).json({
+        success: false,
+        message: 'Không thể xóa phòng đang có người thuê! Hãy kết thúc hợp đồng trước.'
+      });
+    }
+
+    const hasContract = await Contract.exists({ roomId: room._id });
+    const hasInvoice = await Invoice.exists({ roomId: room._id });
+    if (hasContract || hasInvoice) {
+      return res.status(400).json({
+        success: false,
+        message: 'Phòng này đã có lịch sử hợp đồng hoặc hóa đơn, không thể xóa!'
+      });
+    }
+
+    await Room.findByIdAndDelete(req.params.id);
 
     res.status(200).json({
       success: true,

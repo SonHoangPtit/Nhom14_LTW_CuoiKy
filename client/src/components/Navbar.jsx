@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 
@@ -11,6 +11,12 @@ const Navbar = () => {
     logout();
     navigate('/login');
   };
+
+  // Tự động tô xanh đúng mục của trang đang mở
+  const navLinkClass = ({ isActive }) =>
+    isActive
+      ? 'text-blue-600 dark:text-blue-400 font-semibold'
+      : 'text-gray-700 dark:text-gray-200 hover:text-blue-600';
 
   return (
     <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
@@ -30,37 +36,37 @@ const Navbar = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-3 text-sm font-medium">
-          <Link to="/" className="text-gray-700 dark:text-gray-200 hover:text-blue-600">
+          <NavLink to="/" end className={navLinkClass}>
             Phòng trống
-          </Link>
+          </NavLink>
 
           {user?.role === 'landlord' && (
             <>
-              <Link to="/landlord/dashboard" className="text-gray-700 dark:text-gray-200 hover:text-blue-600">
+              <NavLink to="/landlord/dashboard" className={navLinkClass}>
                 Thống kê
-              </Link>
-              <Link to="/landlord/houses-rooms" className="text-gray-700 dark:text-gray-200 hover:text-blue-600">
+              </NavLink>
+              <NavLink to="/landlord/houses-rooms" className={navLinkClass}>
                 Dãy & Phòng
-              </Link>
-              <Link to="/landlord/contracts" className="text-gray-700 dark:text-gray-200 hover:text-blue-600">
+              </NavLink>
+              <NavLink to="/landlord/contracts" className={navLinkClass}>
                 Hợp đồng
-              </Link>
-              <Link to="/landlord/bulk-utility" className="text-blue-600 dark:text-blue-400 font-semibold">
+              </NavLink>
+              <NavLink to="/landlord/bulk-utility" className={navLinkClass}>
                 Ghi điện nước
-              </Link>
-              <Link to="/landlord/invoices" className="text-gray-700 dark:text-gray-200 hover:text-blue-600">
+              </NavLink>
+              <NavLink to="/landlord/invoices" className={navLinkClass}>
                 Hóa đơn
-              </Link>
-              <Link to="/landlord/repairs" className="text-gray-700 dark:text-gray-200 hover:text-blue-600">
+              </NavLink>
+              <NavLink to="/landlord/repairs" className={navLinkClass}>
                 Sửa chữa
-              </Link>
+              </NavLink>
             </>
           )}
 
           {user?.role === 'tenant' && (
-            <Link to="/tenant" className="text-blue-600 dark:text-blue-400 font-semibold">
+            <NavLink to="/tenant" className={navLinkClass}>
               Phòng của tôi
-            </Link>
+            </NavLink>
           )}
         </div>
 
